@@ -1,0 +1,81 @@
+name: "Release native-code-sign"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 0.1.0)"
+        required: true
+        type: string
+      dry-run:
+        description: "Dry run (skip publish and tag)"
+        type: boolean
+        default: false
+
+permissions: {}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  RUSTUP_MAX_RETRIES: 10
+  TAG: "native-code-sign-v${{ inputs.version }}"
+
+jobs:
+  check-version:
+    name: "Check version coherence"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Verify version matches Cargo.toml"
+        run: |
+          actual=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[] | select(.name == "native-code-sign") | .version')
+          if [ "$actual" != "${{ inputs.version }}" ]; then
+            echo "::error::Input version '${{ inputs.version }}' does not match Cargo.toml version '$actual'"
+            exit 1
+          fi
+
+  publish:
+    name: "Publish to crates.io"
+    needs: [check-version]
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    environment: ${{ !inputs.dry-run && 'release' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Publish"
+        if: ${{ !inputs.dry-run }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --package native-code-sign --locked
+
+  tag:
+    name: "Tag and release"
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    needs: [check-version, publish]
+    if: ${{ !inputs.dry-run }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Create tag"
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: "Create release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --target "${{ github.sha }}" \
+            --title "$TAG" \
+            --generate-notes

@@ -1,0 +1,24 @@
+[package]
+name = "cargo-code-sign"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Sign Rust binaries after cargo build (macOS codesign, Windows signtool)"
+categories = ["development-tools::cargo-plugins"]
+keywords = ["security", "codesign", "signtool", "signing"]
+
+[dependencies]
+cargo_metadata = "0.23"
+native-code-sign = { path = "../native-code-sign" }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+fs-err = "3"
+serde_json = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

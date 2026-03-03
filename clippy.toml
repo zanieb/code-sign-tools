@@ -1,0 +1,24 @@
+disallowed-types = [
+  { path = "std::fs::File", reason = "use fs_err::File instead for better error messages" },
+  { path = "std::fs::OpenOptions", reason = "use fs_err::OpenOptions instead for better error messages" },
+]
+
+disallowed-methods = [
+  { path = "std::fs::read", reason = "use fs_err::read instead" },
+  { path = "std::fs::read_to_string", reason = "use fs_err::read_to_string instead" },
+  { path = "std::fs::write", reason = "use fs_err::write instead" },
+  { path = "std::fs::copy", reason = "use fs_err::copy instead" },
+  { path = "std::fs::create_dir", reason = "use fs_err::create_dir instead" },
+  { path = "std::fs::create_dir_all", reason = "use fs_err::create_dir_all instead" },
+  { path = "std::fs::remove_file", reason = "use fs_err::remove_file instead" },
+  { path = "std::fs::remove_dir", reason = "use fs_err::remove_dir instead" },
+  { path = "std::fs::remove_dir_all", reason = "use fs_err::remove_dir_all instead" },
+  { path = "std::fs::rename", reason = "use fs_err::rename instead" },
+  { path = "std::fs::metadata", reason = "use fs_err::metadata instead" },
+  { path = "std::fs::canonicalize", reason = "use fs_err::canonicalize instead" },
+  { path = "std::fs::hard_link", reason = "use fs_err::hard_link instead" },
+  { path = "std::fs::read_link", reason = "use fs_err::read_link instead" },
+  { path = "std::fs::read_dir", reason = "use fs_err::read_dir instead" },
+  { path = "std::fs::set_permissions", reason = "use fs_err::set_permissions instead" },
+  { path = "std::fs::symlink_metadata", reason = "use fs_err::symlink_metadata instead" },
+]

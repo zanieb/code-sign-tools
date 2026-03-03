@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  cargo-fmt:
+    name: "cargo fmt"
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Install Rust toolchain"
+        run: rustup component add rustfmt
+
+      - name: "Rustfmt"
+        run: cargo fmt --all --check
+
+  cargo-clippy-linux:
+    name: "cargo clippy on linux"
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: "Install Rust toolchain"
+        run: rustup component add clippy
+
+      - name: "Clippy"
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  cargo-clippy-windows:
+    name: "cargo clippy on windows"
+    timeout-minutes: 15
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: "Install Rust toolchain"
+        run: rustup component add clippy
+
+      - name: "Clippy"
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  cargo-test-linux:
+    name: "cargo test on linux"
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: "Install Rust toolchain"
+        run: rustup show
+
+      - name: "Install maturin"
+        uses: astral-sh/setup-uv@v6
+      - run: uv tool install maturin
+      - run: echo "MATURIN=$(which maturin)" >> "$GITHUB_ENV"
+
+      - name: "Cargo test"
+        run: cargo test --workspace --all-features --locked
+
+  cargo-test-macos:
+    name: "cargo test on macos"
+    timeout-minutes: 10
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: "Install Rust toolchain"
+        run: rustup show
+
+      - name: "Install maturin"
+        uses: astral-sh/setup-uv@v6
+      - run: uv tool install maturin
+      - run: echo "MATURIN=$(which maturin)" >> "$GITHUB_ENV"
+
+      - name: "Prepare macOS signing cert"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CERT_NAME="cargo-code-sign-ci"
+          CERT_DIR="$RUNNER_TEMP/codesign-cert"
+          mkdir -p "$CERT_DIR"
+
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 7 -nodes \
+            -keyout "$CERT_DIR/key.pem" \
+            -out "$CERT_DIR/cert.pem" \
+            -subj "/CN=$CERT_NAME" \
+            -addext "extendedKeyUsage=codeSigning" \
+            -addext "keyUsage=digitalSignature"
+
+          P12_PASSWORD="$(uuidgen | tr -d '-')"
+
+          # LibreSSL (shipped with macOS) doesn't support -legacy; OpenSSL 3.x
+          # requires it for macOS keychain compatibility.
+          LEGACY_FLAG=""
+          if openssl version 2>&1 | grep -q "^OpenSSL 3"; then
+            LEGACY_FLAG="-legacy"
+          fi
+
+          openssl pkcs12 -export $LEGACY_FLAG \
+            -inkey "$CERT_DIR/key.pem" \
+            -in "$CERT_DIR/cert.pem" \
+            -name "$CERT_NAME" \
+            -out "$CERT_DIR/cert.p12" \
+            -passout pass:"$P12_PASSWORD"
+
+          CERT_B64="$(base64 < "$CERT_DIR/cert.p12" | tr -d '\n')"
+          CERT_SHA1="$(openssl x509 -in "$CERT_DIR/cert.pem" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')"
+
+          {
+            echo "CODESIGN_IDENTITY=$CERT_SHA1"
+            echo "CODESIGN_CERTIFICATE=$CERT_B64"
+            echo "CODESIGN_CERTIFICATE_PASSWORD=$P12_PASSWORD"
+            echo "CODESIGN_ALLOW_UNTRUSTED=1"
+          } >> "$GITHUB_ENV"
+
+      - name: "Cargo test"
+        run: cargo test --workspace --all-features --locked
+
+  cargo-test-windows:
+    name: "cargo test on windows"
+    timeout-minutes: 15
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: "Install Rust toolchain"
+        run: rustup show
+
+      - name: "Install maturin"
+        uses: astral-sh/setup-uv@v6
+      - run: uv tool install maturin
+      - run: |
+          $maturinPath = (Get-Command maturin).Source
+          "MATURIN=$maturinPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        shell: pwsh
+
+      - name: "Prepare Windows signing cert"
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=cargo-code-sign-ci" `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -NotAfter (Get-Date).AddDays(7)
+
+          $passwordPlain = [Guid]::NewGuid().ToString("N")
+          $password = ConvertTo-SecureString -String $passwordPlain -Force -AsPlainText
+          $pfxPath = Join-Path $env:RUNNER_TEMP "cargo-code-sign-ci.pfx"
+
+          Export-PfxCertificate `
+            -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" `
+            -FilePath $pfxPath `
+            -Password $password | Out-Null
+
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          if (-not $signtool) {
+            $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if ($cmd) {
+              $signtool = $cmd.Source
+            }
+          }
+
+          if (-not $signtool) {
+            throw "signtool.exe not found on runner"
+          }
+
+          "SIGNTOOL_CERTIFICATE_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SIGNTOOL_CERTIFICATE_PASSWORD=$passwordPlain" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: "Cargo test"
+        run: cargo test --workspace --all-features --locked
