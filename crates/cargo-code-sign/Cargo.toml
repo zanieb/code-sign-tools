@@ -9,7 +9,7 @@ keywords = ["security", "codesign", "signtool", "signing"]
 
 [dependencies]
 cargo_metadata = "0.23"
-native-code-sign = { path = "../native-code-sign" }
+native-code-sign = { version = "0.1.0", path = "../native-code-sign" }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
