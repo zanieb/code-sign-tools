@@ -2,6 +2,7 @@
 name = "native-code-sign"
 version = "0.2.0"
 edition.workspace = true
+rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Platform-native code signing (macOS codesign, Windows signtool)"
 categories = ["development-tools"]
